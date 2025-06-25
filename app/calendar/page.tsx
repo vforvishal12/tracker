@@ -1,13 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useSession } from "next-auth/react"
 import { Navbar } from "@/components/navbar"
 import { CalendarBoard } from "@/components/calendar-board"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { View } from "react-big-calendar"
+import { useUser } from "@/lib/user-context"
 
 interface CalendarEvent {
   id: string
@@ -27,16 +27,16 @@ interface CalendarEvent {
 }
 
 export default function CalendarPage() {
-  const { data: session, status } = useSession()
+  const { currentUser } = useUser()
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [currentView, setCurrentView] = useState<View>("month" as View)
 
   useEffect(() => {
-    if (session) {
+    if (currentUser) {
       fetchEvents()
     }
-  }, [session])
+  }, [currentUser])
 
   const fetchEvents = async () => {
     try {
@@ -69,19 +69,7 @@ export default function CalendarPage() {
     console.log("Selected slot:", slotInfo)
   }
 
-  if (status === "loading") {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <div className="container mx-auto px-4 py-8">
-          <Skeleton className="h-8 w-64 mb-4" />
-          <Skeleton className="h-96 w-full" />
-        </div>
-      </div>
-    )
-  }
-
-  if (!session) {
+  if (!currentUser) {
     return null
   }
 

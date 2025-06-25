@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic"
 import { type NextRequest, NextResponse } from "next/server"
 import { getUserById, LEAVE_REQUESTS, HOLIDAYS, USERS } from "@/lib/static-data"
 
