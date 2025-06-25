@@ -1,34 +1,27 @@
 "use client"
 
-import { useSession, signOut } from "next-auth/react"
 import Link from "next/link"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Calendar, Users, Settings, LogOut } from "lucide-react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Calendar } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { UserSelector } from "@/components/user-selector"
+import { useUser } from "@/lib/user-context"
 import { useEffect, useState } from "react"
 
 export function Navbar() {
-  const { data: session } = useSession()
+  const { currentUser } = useUser()
   const [pendingCount, setPendingCount] = useState(0)
 
   useEffect(() => {
-    if (session?.user.role === "MANAGER" || session?.user.role === "ADMIN") {
+    if (currentUser && (currentUser.role === "MANAGER" || currentUser.role === "ADMIN")) {
       fetchPendingCount()
     }
-  }, [session])
+  }, [currentUser])
 
   const fetchPendingCount = async () => {
     try {
-      const response = await fetch("/api/leave/pending-count")
+      const response = await fetch(`/api/leave/pending-count?userId=${currentUser?.id}`)
       const data = await response.json()
       setPendingCount(data.count || 0)
     } catch (error) {
@@ -36,7 +29,7 @@ export function Navbar() {
     }
   }
 
-  if (!session) return null
+  if (!currentUser) return null
 
   return (
     <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -61,7 +54,7 @@ export function Navbar() {
               >
                 Calendar
               </Link>
-              {(session.user.role === "MANAGER" || session.user.role === "ADMIN") && (
+              {(currentUser.role === "MANAGER" || currentUser.role === "ADMIN") && (
                 <Link
                   href="/approvals"
                   className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center space-x-1"
@@ -74,59 +67,24 @@ export function Navbar() {
                   )}
                 </Link>
               )}
-              {session.user.role === "ADMIN" && (
-                <Link
-                  href="/admin"
-                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Admin
-                </Link>
-              )}
             </div>
           </div>
 
           <div className="flex items-center space-x-4">
+            <UserSelector />
             <ThemeToggle />
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={session.user.image || ""} alt={session.user.name || ""} />
-                    <AvatarFallback>{session.user.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
-                <div className="flex items-center justify-start gap-2 p-2">
-                  <div className="flex flex-col space-y-1 leading-none">
-                    <p className="font-medium">{session.user.name}</p>
-                    <p className="w-[200px] truncate text-sm text-muted-foreground">{session.user.email}</p>
-                    <Badge variant="secondary" className="w-fit text-xs">
-                      {session.user.role}
-                    </Badge>
-                  </div>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/profile" className="cursor-pointer">
-                    <Users className="mr-2 h-4 w-4" />
-                    Profile
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings" className="cursor-pointer">
-                    <Settings className="mr-2 h-4 w-4" />
-                    Settings
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="cursor-pointer" onSelect={() => signOut({ callbackUrl: "/auth/signin" })}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <div className="flex items-center space-x-2">
+              <Avatar className="h-8 w-8">
+                <AvatarFallback>{currentUser.name?.charAt(0).toUpperCase() || "U"}</AvatarFallback>
+              </Avatar>
+              <div className="hidden sm:block">
+                <p className="text-sm font-medium">{currentUser.name}</p>
+                <Badge variant="secondary" className="text-xs">
+                  {currentUser.role}
+                </Badge>
+              </div>
+            </div>
           </div>
         </div>
       </div>

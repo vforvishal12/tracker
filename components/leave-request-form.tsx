@@ -23,6 +23,7 @@ import { CalendarIcon, Plus } from "lucide-react"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import { useToast } from "@/hooks/use-toast"
+import { useUser } from "@/lib/user-context"
 import type { z } from "zod"
 
 type FormData = z.infer<typeof leaveRequestSchema>
@@ -35,6 +36,7 @@ export function LeaveRequestForm({ onSuccess }: LeaveRequestFormProps) {
   const [open, setOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
+  const { currentUser } = useUser()
 
   const form = useForm<FormData>({
     resolver: zodResolver(leaveRequestSchema),
@@ -45,6 +47,15 @@ export function LeaveRequestForm({ onSuccess }: LeaveRequestFormProps) {
   })
 
   const onSubmit = async (data: FormData) => {
+    if (!currentUser) {
+      toast({
+        title: "Error",
+        description: "Please select a user first.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const response = await fetch("/api/leave", {
@@ -54,6 +65,7 @@ export function LeaveRequestForm({ onSuccess }: LeaveRequestFormProps) {
         },
         body: JSON.stringify({
           ...data,
+          userId: currentUser.id,
           startDate: data.startDate.toISOString(),
           endDate: data.endDate.toISOString(),
         }),

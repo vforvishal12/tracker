@@ -1,73 +1,66 @@
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { redirect } from "next/navigation"
-import { prisma } from "@/lib/prisma"
+"use client"
+
+import { useEffect, useState } from "react"
+import { useUser } from "@/lib/user-context"
 import { Navbar } from "@/components/navbar"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { LeaveRequestForm } from "@/components/leave-request-form"
 import { CalendarDays, Clock, CheckCircle, Users } from "lucide-react"
 
-export default async function Dashboard() {
-  const session = await getServerSession(authOptions)
+interface LeaveRequest {
+  id: string
+  startDate: string
+  endDate: string
+  leaveType: string
+  status: string
+  note?: string
+  approverComment?: string
+}
 
-  if (!session) {
-    redirect("/auth/signin")
+export default function Dashboard() {
+  const { currentUser } = useUser()
+  const [userRequests, setUserRequests] = useState<LeaveRequest[]>([])
+  const [stats, setStats] = useState({
+    totalDaysOff: 0,
+    pendingCount: 0,
+    approvedCount: 0,
+    teamStats: null as any,
+  })
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchUserRequests()
+      fetchStats()
+    }
+  }, [currentUser])
+
+  const fetchUserRequests = async () => {
+    try {
+      const response = await fetch(`/api/leave?userId=${currentUser?.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setUserRequests(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch requests:", error)
+    }
   }
 
-  // Fetch user's leave requests
-  const userRequests = await prisma.leaveRequest.findMany({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  })
-
-  // Calculate stats
-  const currentYear = new Date().getFullYear()
-  const yearStart = new Date(currentYear, 0, 1)
-  const yearEnd = new Date(currentYear, 11, 31)
-
-  const approvedRequests = await prisma.leaveRequest.findMany({
-    where: {
-      userId: session.user.id,
-      status: "APPROVED",
-      startDate: { gte: yearStart },
-      endDate: { lte: yearEnd },
-    },
-  })
-
-  const totalDaysOff = approvedRequests.reduce((total, request) => {
-    const start = new Date(request.startDate)
-    const end = new Date(request.endDate)
-    const diffTime = Math.abs(end.getTime() - start.getTime())
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
-    return total + diffDays
-  }, 0)
-
-  const pendingCount = userRequests.filter((r) => r.status === "PENDING").length
-  const approvedCount = userRequests.filter((r) => r.status === "APPROVED").length
-
-  // Manager/Admin stats
-  let teamStats = null
-  if (session.user.role === "MANAGER" || session.user.role === "ADMIN") {
-    const teamRequests = await prisma.leaveRequest.findMany({
-      where:
-        session.user.role === "ADMIN"
-          ? {}
-          : {
-              user: { managerId: session.user.id },
-            },
-      include: { user: true },
-    })
-
-    teamStats = {
-      totalRequests: teamRequests.length,
-      pendingRequests: teamRequests.filter((r) => r.status === "PENDING").length,
-      teamMembers:
-        session.user.role === "ADMIN"
-          ? await prisma.user.count()
-          : await prisma.user.count({ where: { managerId: session.user.id } }),
+  const fetchStats = async () => {
+    try {
+      const response = await fetch(`/api/leave/stats?userId=${currentUser?.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setStats(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch stats:", error)
     }
+  }
+
+  if (!currentUser) {
+    return <div>Loading...</div>
   }
 
   return (
@@ -76,10 +69,10 @@ export default async function Dashboard() {
       <div className="container mx-auto px-4 py-8">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold">Welcome back, {session.user.name?.split(" ")[0]}!</h1>
+            <h1 className="text-3xl font-bold">Welcome back, {currentUser.name?.split(" ")[0]}!</h1>
             <p className="text-muted-foreground mt-1">Manage your time off and view your team's schedule</p>
           </div>
-          <LeaveRequestForm />
+          <LeaveRequestForm onSuccess={fetchUserRequests} />
         </div>
 
         {/* Stats Cards */}
@@ -90,8 +83,8 @@ export default async function Dashboard() {
               <CalendarDays className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalDaysOff}</div>
-              <p className="text-xs text-muted-foreground">Approved leave days in {currentYear}</p>
+              <div className="text-2xl font-bold">{stats.totalDaysOff}</div>
+              <p className="text-xs text-muted-foreground">Approved leave days in 2024</p>
             </CardContent>
           </Card>
 
@@ -101,7 +94,7 @@ export default async function Dashboard() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{pendingCount}</div>
+              <div className="text-2xl font-bold">{stats.pendingCount}</div>
               <p className="text-xs text-muted-foreground">Awaiting approval</p>
             </CardContent>
           </Card>
@@ -112,21 +105,21 @@ export default async function Dashboard() {
               <CheckCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{approvedCount}</div>
+              <div className="text-2xl font-bold">{stats.approvedCount}</div>
               <p className="text-xs text-muted-foreground">This year</p>
             </CardContent>
           </Card>
 
-          {teamStats && (
+          {stats.teamStats && (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Team Overview</CardTitle>
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{teamStats.pendingRequests}</div>
+                <div className="text-2xl font-bold">{stats.teamStats.pendingRequests}</div>
                 <p className="text-xs text-muted-foreground">
-                  Pending approvals from {teamStats.teamMembers} team members
+                  Pending approvals from {stats.teamStats.teamMembers} team members
                 </p>
               </CardContent>
             </Card>

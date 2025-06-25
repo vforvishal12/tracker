@@ -1,14 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get("userId")
 
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    }
+
+    // Get user
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
     const whereClause: any = {
@@ -16,11 +24,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Role-based filtering
-    if (session.user.role === "MANAGER") {
+    if (user.role === "MANAGER") {
       whereClause.user = {
-        managerId: session.user.id,
+        managerId: userId,
       }
-    } else if (session.user.role === "EMPLOYEE") {
+    } else if (user.role === "EMPLOYEE") {
       // Employees can't see pending counts for others
       return NextResponse.json({ count: 0 })
     }

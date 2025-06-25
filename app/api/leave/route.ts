@@ -1,18 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { leaveRequestSchema } from "@/lib/validations"
-import { sendLeaveRequestNotification } from "@/lib/email"
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
     const body = await request.json()
     const validatedData = leaveRequestSchema.parse({
       ...body,
@@ -20,10 +11,16 @@ export async function POST(request: NextRequest) {
       endDate: new Date(body.endDate),
     })
 
+    const { userId } = body
+
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    }
+
     // Create leave request
     const leaveRequest = await prisma.leaveRequest.create({
       data: {
-        userId: session.user.id,
+        userId: userId,
         startDate: validatedData.startDate,
         endDate: validatedData.endDate,
         leaveType: validatedData.leaveType,
@@ -31,16 +28,9 @@ export async function POST(request: NextRequest) {
         status: "PENDING",
       },
       include: {
-        user: {
-          include: {
-            manager: true,
-          },
-        },
+        user: true,
       },
     })
-
-    // Send notification email
-    await sendLeaveRequestNotification(leaveRequest, "submitted")
 
     return NextResponse.json(leaveRequest)
   } catch (error) {
@@ -51,36 +41,32 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
     const status = searchParams.get("status")
 
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    }
+
+    // Get user to check role
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
     const whereClause: any = {}
 
     // Role-based filtering
-    if (session.user.role === "EMPLOYEE") {
-      whereClause.userId = session.user.id
-    } else if (session.user.role === "MANAGER") {
-      if (userId) {
-        // Check if user is a direct report
-        const user = await prisma.user.findUnique({
-          where: { id: userId },
-        })
-        if (user?.managerId !== session.user.id) {
-          return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-        }
-        whereClause.userId = userId
-      } else {
-        // Get all direct reports' requests
-        whereClause.user = {
-          managerId: session.user.id,
-        }
+    if (user.role === "EMPLOYEE") {
+      whereClause.userId = userId
+    } else if (user.role === "MANAGER") {
+      // Get all direct reports' requests
+      whereClause.user = {
+        managerId: userId,
       }
     }
     // ADMIN can see all requests (no additional filtering)
