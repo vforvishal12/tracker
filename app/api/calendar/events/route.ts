@@ -1,98 +1,87 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { prisma } from "@/lib/prisma"
+import { getUserById, LEAVE_REQUESTS, HOLIDAYS, USERS } from "@/lib/static-data"
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-
-    if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
     const { searchParams } = new URL(request.url)
+    const userId = searchParams.get("userId")
     const start = searchParams.get("start")
     const end = searchParams.get("end")
 
-    const whereClause: any = {}
-
-    // Date filtering
-    if (start && end) {
-      whereClause.OR = [
-        {
-          startDate: {
-            gte: new Date(start),
-            lte: new Date(end),
-          },
-        },
-        {
-          endDate: {
-            gte: new Date(start),
-            lte: new Date(end),
-          },
-        },
-        {
-          AND: [{ startDate: { lte: new Date(start) } }, { endDate: { gte: new Date(end) } }],
-        },
-      ]
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
+    // Get user
+    const user = getUserById(userId)
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    let leaveRequests = [...LEAVE_REQUESTS]
+
     // Role-based filtering
-    if (session.user.role === "EMPLOYEE") {
+    if (user.role === "EMPLOYEE") {
       // Employees can only see approved requests from their team
-      whereClause.status = "APPROVED"
+      leaveRequests = leaveRequests.filter((request) => request.status === "APPROVED")
       // TODO: Add team/department filtering based on business requirements
-    } else if (session.user.role === "MANAGER") {
+    } else if (user.role === "MANAGER") {
       // Managers can see all requests from their direct reports
-      whereClause.user = {
-        managerId: session.user.id,
-      }
+      const directReportIds = USERS.filter((u) => u.managerId === userId).map((u) => u.id)
+      leaveRequests = leaveRequests.filter((request) => directReportIds.includes(request.userId))
     }
     // ADMIN can see all requests
 
-    const leaveRequests = await prisma.leaveRequest.findMany({
-      where: whereClause,
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            department: true,
-          },
-        },
-      },
-    })
+    // Date filtering
+    if (start && end) {
+      const startDate = new Date(start)
+      const endDate = new Date(end)
+
+      leaveRequests = leaveRequests.filter((request) => {
+        const requestStart = new Date(request.startDate)
+        const requestEnd = new Date(request.endDate)
+
+        return (
+          (requestStart >= startDate && requestStart <= endDate) ||
+          (requestEnd >= startDate && requestEnd <= endDate) ||
+          (requestStart <= startDate && requestEnd >= endDate)
+        )
+      })
+    }
 
     // Transform to calendar events format
-    const events = leaveRequests.map((request) => ({
-      id: request.id,
-      title: `${request.user.name} - ${request.leaveType}`,
-      start: new Date(request.startDate),
-      end: new Date(request.endDate),
-      resource: {
-        userId: request.user.id,
-        userName: request.user.name,
-        status: request.status,
-        leaveType: request.leaveType,
-        note: request.note,
-        department: request.user.department,
-      },
-    }))
+    const events = leaveRequests.map((request) => {
+      const requestUser = getUserById(request.userId)
+      return {
+        id: request.id,
+        title: `${requestUser?.name || "Unknown"} - ${request.leaveType}`,
+        start: new Date(request.startDate),
+        end: new Date(request.endDate),
+        resource: {
+          userId: request.userId,
+          userName: requestUser?.name || "Unknown",
+          status: request.status,
+          leaveType: request.leaveType,
+          note: request.note,
+          department: requestUser?.department,
+        },
+      }
+    })
 
     // Also fetch company holidays
-    const holidays = await prisma.holiday.findMany({
-      where:
-        start && end
-          ? {
-              date: {
-                gte: new Date(start),
-                lte: new Date(end),
-              },
-            }
-          : {},
-    })
+    let holidays = [...HOLIDAYS]
+
+    // Date filtering for holidays
+    if (start && end) {
+      const startDate = new Date(start)
+      const endDate = new Date(end)
+
+      holidays = holidays.filter((holiday) => {
+        const holidayDate = new Date(holiday.date)
+        return holidayDate >= startDate && holidayDate <= endDate
+      })
+    }
 
     const holidayEvents = holidays.map((holiday) => ({
       id: `holiday-${holiday.id}`,

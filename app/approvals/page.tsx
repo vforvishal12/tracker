@@ -1,49 +1,67 @@
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { redirect } from "next/navigation"
-import { prisma } from "@/lib/prisma"
+"use client"
+
+import { useEffect, useState } from "react"
+import { useUser } from "@/lib/user-context"
 import { Navbar } from "@/components/navbar"
 import { ApprovalsList } from "@/components/approvals-list"
 
-export default async function ApprovalsPage() {
-  const session = await getServerSession(authOptions)
-
-  if (!session) {
-    redirect("/auth/signin")
+interface LeaveRequest {
+  id: string
+  startDate: string
+  endDate: string
+  leaveType: string
+  note?: string
+  user: {
+    id: string
+    name: string
+    email: string
+    department?: string
   }
+}
 
-  if (session.user.role === "EMPLOYEE") {
-    redirect("/dashboard")
-  }
+export default function ApprovalsPage() {
+  const { currentUser } = useUser()
+  const [pendingRequests, setPendingRequests] = useState<LeaveRequest[]>([])
+  const [loading, setLoading] = useState(true)
 
-  // Fetch pending requests based on role
-  const whereClause: any = {
-    status: "PENDING",
-  }
+  useEffect(() => {
+    if (currentUser && (currentUser.role === "MANAGER" || currentUser.role === "ADMIN")) {
+      fetchPendingRequests()
+    }
+  }, [currentUser])
 
-  if (session.user.role === "MANAGER") {
-    whereClause.user = {
-      managerId: session.user.id,
+  const fetchPendingRequests = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch(`/api/leave?userId=${currentUser?.id}&status=PENDING`)
+      if (response.ok) {
+        const data = await response.json()
+        setPendingRequests(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch pending requests:", error)
+    } finally {
+      setLoading(false)
     }
   }
-  // ADMIN can see all pending requests
 
-  const pendingRequests = await prisma.leaveRequest.findMany({
-    where: whereClause,
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          department: true,
-        },
-      },
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
-  })
+  if (!currentUser) {
+    return <div>Loading...</div>
+  }
+
+  if (currentUser.role === "EMPLOYEE") {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="container mx-auto px-4 py-8">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
+            <p className="text-muted-foreground">You don't have permission to view this page.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -54,7 +72,11 @@ export default async function ApprovalsPage() {
           <p className="text-muted-foreground mt-1">Review and approve leave requests from your team</p>
         </div>
 
-        <ApprovalsList requests={pendingRequests} />
+        {loading ? (
+          <div className="text-center py-8">Loading...</div>
+        ) : (
+          <ApprovalsList requests={pendingRequests} onUpdate={fetchPendingRequests} />
+        )}
       </div>
     </div>
   )

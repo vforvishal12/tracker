@@ -1,6 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
 import { leaveRequestSchema } from "@/lib/validations"
+import {
+  getUserById,
+  getLeaveRequestsByUserId,
+  getLeaveRequestsByManagerId,
+  LEAVE_REQUESTS,
+  addLeaveRequest,
+} from "@/lib/static-data"
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,21 +24,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Create leave request
-    const leaveRequest = await prisma.leaveRequest.create({
-      data: {
-        userId: userId,
-        startDate: validatedData.startDate,
-        endDate: validatedData.endDate,
-        leaveType: validatedData.leaveType,
-        note: validatedData.note,
-        status: "PENDING",
-      },
-      include: {
-        user: true,
-      },
+    const leaveRequest = addLeaveRequest({
+      userId: userId,
+      startDate: validatedData.startDate.toISOString().split("T")[0],
+      endDate: validatedData.endDate.toISOString().split("T")[0],
+      leaveType: validatedData.leaveType,
+      note: validatedData.note,
+      status: "PENDING",
     })
 
-    return NextResponse.json(leaveRequest)
+    // Add user info for response
+    const user = getUserById(userId)
+    const response = {
+      ...leaveRequest,
+      user: user
+        ? {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            department: user.department,
+          }
+        : null,
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error("Error creating leave request:", error)
     return NextResponse.json({ error: "Failed to create leave request" }, { status: 500 })
@@ -50,56 +65,59 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user to check role
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    })
+    const user = getUserById(userId)
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const whereClause: any = {}
+    let leaveRequests = []
 
     // Role-based filtering
     if (user.role === "EMPLOYEE") {
-      whereClause.userId = userId
+      leaveRequests = getLeaveRequestsByUserId(userId)
     } else if (user.role === "MANAGER") {
       // Get all direct reports' requests
-      whereClause.user = {
-        managerId: userId,
-      }
+      leaveRequests = getLeaveRequestsByManagerId(userId)
+    } else if (user.role === "ADMIN") {
+      // Admin can see all requests
+      leaveRequests = [...LEAVE_REQUESTS]
     }
-    // ADMIN can see all requests (no additional filtering)
 
+    // Filter by status if provided
     if (status) {
-      whereClause.status = status
+      leaveRequests = leaveRequests.filter((request) => request.status === status)
     }
 
-    const leaveRequests = await prisma.leaveRequest.findMany({
-      where: whereClause,
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            department: true,
-          },
-        },
-        approvedBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
+    // Add user info to each request
+    const requestsWithUserInfo = leaveRequests.map((request) => {
+      const requestUser = getUserById(request.userId)
+      const approver = request.approvedById ? getUserById(request.approvedById) : null
+
+      return {
+        ...request,
+        user: requestUser
+          ? {
+              id: requestUser.id,
+              name: requestUser.name,
+              email: requestUser.email,
+              department: requestUser.department,
+            }
+          : null,
+        approvedBy: approver
+          ? {
+              id: approver.id,
+              name: approver.name,
+              email: approver.email,
+            }
+          : null,
+      }
     })
 
-    return NextResponse.json(leaveRequests)
+    // Sort by creation date (newest first)
+    requestsWithUserInfo.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+    return NextResponse.json(requestsWithUserInfo)
   } catch (error) {
     console.error("Error fetching leave requests:", error)
     return NextResponse.json({ error: "Failed to fetch leave requests" }, { status: 500 })

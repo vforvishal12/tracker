@@ -1,18 +1,21 @@
 import { NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { USERS } from "@/lib/static-data"
 
 export async function GET() {
   try {
-    const users = await prisma.user.findMany({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        managerId: true,
-        department: true,
-      },
-      orderBy: [{ role: "asc" }, { name: "asc" }],
+    const users = USERS.map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      managerId: user.managerId,
+      department: user.department,
+    })).sort((a, b) => {
+      // Sort by role first (ADMIN, MANAGER, EMPLOYEE), then by name
+      const roleOrder = { ADMIN: 0, MANAGER: 1, EMPLOYEE: 2 }
+      const roleComparison = roleOrder[a.role as keyof typeof roleOrder] - roleOrder[b.role as keyof typeof roleOrder]
+      if (roleComparison !== 0) return roleComparison
+      return a.name.localeCompare(b.name)
     })
 
     return NextResponse.json(users)

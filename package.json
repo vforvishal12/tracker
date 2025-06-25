@@ -3,12 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "prisma generate && next build",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "db:seed": "prisma db seed",
+    "build": "next build",
     "dev": "next dev",
-    "postinstall": "prisma generate",
     "lint": "next lint",
     "start": "next start"
   },
@@ -37,6 +33,7 @@
     "next-auth": "latest",
     "next-themes": "latest",
     "nodemailer": "latest",
+    "prisma": "latest",
     "react": "^18",
     "react-big-calendar": "latest",
     "react-day-picker": "^8.9.0",
@@ -55,12 +52,7 @@
     "eslint": "^8",
     "eslint-config-next": "14.0.4",
     "postcss": "^8.5",
-    "prisma": "^5.7.1",
     "tailwindcss": "^3.3.0",
     "typescript": "^5"
-  },
-  "packageManager": "pnpm@9.1.1",
-  "prisma": {
-    "seed": "tsx scripts/seed.ts"
   }
 }

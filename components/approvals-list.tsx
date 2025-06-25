@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { CheckCircle, XCircle, Calendar, User, MessageSquare } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { useRouter } from "next/navigation"
+import { useUser } from "@/lib/user-context"
 
 interface LeaveRequest {
   id: string
@@ -34,18 +34,19 @@ interface LeaveRequest {
 
 interface ApprovalsListProps {
   requests: LeaveRequest[]
+  onUpdate?: () => void
 }
 
-export function ApprovalsList({ requests }: ApprovalsListProps) {
+export function ApprovalsList({ requests, onUpdate }: ApprovalsListProps) {
   const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null)
   const [action, setAction] = useState<"approve" | "reject" | null>(null)
   const [comment, setComment] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
-  const router = useRouter()
+  const { currentUser } = useUser()
 
   const handleAction = async () => {
-    if (!selectedRequest || !action) return
+    if (!selectedRequest || !action || !currentUser) return
 
     setIsSubmitting(true)
     try {
@@ -55,6 +56,7 @@ export function ApprovalsList({ requests }: ApprovalsListProps) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          userId: currentUser.id,
           status: action === "approve" ? "APPROVED" : "REJECTED",
           approverComment: comment || undefined,
         }),
@@ -72,7 +74,7 @@ export function ApprovalsList({ requests }: ApprovalsListProps) {
       setSelectedRequest(null)
       setAction(null)
       setComment("")
-      router.refresh()
+      onUpdate?.()
     } catch (error) {
       toast({
         title: "Error",

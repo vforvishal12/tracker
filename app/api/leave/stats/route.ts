@@ -1,5 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import {
+  getUserById,
+  getLeaveRequestsByUserId,
+  getLeaveRequestsByManagerId,
+  LEAVE_REQUESTS,
+  USERS,
+} from "@/lib/static-data"
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,26 +17,26 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    })
+    const user = getUserById(userId)
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
+    // Get user's requests
+    const userRequests = getLeaveRequestsByUserId(userId)
+
     // Calculate stats
     const currentYear = new Date().getFullYear()
-    const yearStart = new Date(currentYear, 0, 1)
-    const yearEnd = new Date(currentYear, 11, 31)
 
-    const approvedRequests = await prisma.leaveRequest.findMany({
-      where: {
-        userId: userId,
-        status: "APPROVED",
-        startDate: { gte: yearStart },
-        endDate: { lte: yearEnd },
-      },
+    const approvedRequests = userRequests.filter((request) => {
+      const startDate = new Date(request.startDate)
+      const endDate = new Date(request.endDate)
+      return (
+        request.status === "APPROVED" &&
+        startDate.getFullYear() === currentYear &&
+        endDate.getFullYear() === currentYear
+      )
     })
 
     const totalDaysOff = approvedRequests.reduce((total, request) => {
@@ -41,31 +47,18 @@ export async function GET(request: NextRequest) {
       return total + diffDays
     }, 0)
 
-    const userRequests = await prisma.leaveRequest.findMany({
-      where: { userId: userId },
-    })
-
     const pendingCount = userRequests.filter((r) => r.status === "PENDING").length
     const approvedCount = userRequests.filter((r) => r.status === "APPROVED").length
 
     // Manager/Admin stats
     let teamStats = null
     if (user.role === "MANAGER" || user.role === "ADMIN") {
-      const teamRequests = await prisma.leaveRequest.findMany({
-        where:
-          user.role === "ADMIN"
-            ? {}
-            : {
-                user: { managerId: userId },
-              },
-        include: { user: true },
-      })
+      const teamRequests = user.role === "ADMIN" ? LEAVE_REQUESTS : getLeaveRequestsByManagerId(userId)
 
       teamStats = {
         totalRequests: teamRequests.length,
         pendingRequests: teamRequests.filter((r) => r.status === "PENDING").length,
-        teamMembers:
-          user.role === "ADMIN" ? await prisma.user.count() : await prisma.user.count({ where: { managerId: userId } }),
+        teamMembers: user.role === "ADMIN" ? USERS.length : USERS.filter((u) => u.managerId === userId).length,
       }
     }
 

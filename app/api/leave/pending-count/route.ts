@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/prisma"
+import { getUserById, getLeaveRequestsByManagerId, LEAVE_REQUESTS } from "@/lib/static-data"
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,32 +11,24 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    })
+    const user = getUserById(userId)
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const whereClause: any = {
-      status: "PENDING",
-    }
+    let count = 0
 
     // Role-based filtering
     if (user.role === "MANAGER") {
-      whereClause.user = {
-        managerId: userId,
-      }
-    } else if (user.role === "EMPLOYEE") {
+      const teamRequests = getLeaveRequestsByManagerId(userId)
+      count = teamRequests.filter((request) => request.status === "PENDING").length
+    } else if (user.role === "ADMIN") {
+      count = LEAVE_REQUESTS.filter((request) => request.status === "PENDING").length
+    } else {
       // Employees can't see pending counts for others
-      return NextResponse.json({ count: 0 })
+      count = 0
     }
-    // ADMIN can see all pending requests
-
-    const count = await prisma.leaveRequest.count({
-      where: whereClause,
-    })
 
     return NextResponse.json({ count })
   } catch (error) {
